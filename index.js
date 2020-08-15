@@ -25,8 +25,8 @@ class MainSite extends plugin_1.default {
         super();
         this.name = '主站功能';
         this.description = '每天自动做主站功能（观看、分享、投币）';
-        this.version = '0.0.5';
-        this.author = 'Vector000';
+        this.version = '0.0.6';
+        this.author = 'Vector000, lzghzr';
     }
     async load({ defaultOptions, whiteList }) {
         defaultOptions.newUserData['main'] = false;
@@ -44,7 +44,7 @@ class MainSite extends plugin_1.default {
         };
         defaultOptions.info['mainCoinGroup'] = {
             description: '主站up主',
-            tip: '指定UP主的UID为任务、投币对象，以\",\"间隔；若留空，则任务、投币对象为随机选择该用户的关注up主（不勾选主站投币功能时此项无效）',
+            tip: '指定UP主的UID为任务、投币对象，以\',\'间隔；若留空，则任务、投币对象为随机选择该用户的关注up主（不勾选主站投币功能时此项无效）',
             type: 'numberArray'
         };
         whiteList.add('main');
@@ -65,7 +65,7 @@ class MainSite extends plugin_1.default {
             uri: `https://api.bilibili.com/x/relation/followings?vmid=${user.biliUID}&ps=50&order=desc`,
             jar: user.jar,
             json: true,
-            headers: { "Host": "api.bilibili.com" }
+            headers: { 'Host': 'api.bilibili.com' }
         };
         const getAttentions = await plugin_1.tools.XHR(attentions);
         if (getAttentions === undefined)
@@ -82,7 +82,7 @@ class MainSite extends plugin_1.default {
         let aids = [];
         for (let mid of mids) {
             const summitVideo = {
-                uri: `https://space.bilibili.com/ajax/member/getSubmitVideos?mid=${mid}&pagesize=50&tid=0`,
+                uri: `https://api.bilibili.com/x/space/arc/search?mid=${mid}&ps=100&tid=0&pn=1&keyword=&order=pubdate`,
                 json: true
             };
             const getSummitVideo = await plugin_1.tools.XHR(summitVideo);
@@ -90,10 +90,10 @@ class MainSite extends plugin_1.default {
                 continue;
             else if (getSummitVideo.body.data === undefined || getSummitVideo.body.data === null)
                 continue;
-            else if (getSummitVideo.body.data.vlist.length === 0)
+            else if (getSummitVideo.body.data.list.vlist.length === 0)
                 continue;
             else
-                getSummitVideo.body.data.vlist.forEach(item => { aids.push(item.aid); });
+                getSummitVideo.body.data.list.vlist.forEach(item => { aids.push(item.aid); });
             await plugin_1.tools.Sleep(3 * 1000);
         }
         return aids;
@@ -104,11 +104,9 @@ class MainSite extends plugin_1.default {
             json: true
         };
         const getCid = await plugin_1.tools.XHR(cid);
-        if (getCid === undefined)
+        if (getCid === undefined || getCid.response.statusCode !== 200)
             return;
-        let cids = ({ data: [] });
-        cids.data = getCid.body;
-        return cids.data[0].cid;
+        return getCid.body[0].cid;
     }
     _bilibili(users) {
         users.forEach(async (user) => {
@@ -131,8 +129,8 @@ class MainSite extends plugin_1.default {
                 jar: user.jar,
                 json: true,
                 headers: {
-                    "Referer": `https://account.bilibili.com/account/home`,
-                    "Host": `account.bilibili.com`
+                    'Referer': `https://account.bilibili.com/account/home`,
+                    'Host': `account.bilibili.com`
                 }
             };
             const mainReward = await plugin_1.tools.XHR(reward);
@@ -159,8 +157,8 @@ class MainSite extends plugin_1.default {
             jar: user.jar,
             json: true,
             headers: {
-                "Host": "api.bilibili.com",
-                "Referer": `https://www.bilibili.com/video/av${aid}`
+                'Host': 'api.bilibili.com',
+                'Referer': `https://www.bilibili.com/video/av${aid}`
             }
         };
         const avHeart = await plugin_1.tools.XHR(heart);
@@ -177,7 +175,7 @@ class MainSite extends plugin_1.default {
             body: plugin_1.AppClient.signQuery(`access_key=${user.accessToken}&aid=${aid}&appkey=${plugin_1.AppClient.appKey}&build=${plugin_1.AppClient.build}&from=7&mobi_app=android&platform=android&ts=${ts}`),
             jar: user.jar,
             json: true,
-            headers: { "Host": "app.bilibili.com" }
+            headers: { 'Host': 'app.bilibili.com' }
         };
         const shareAV = await plugin_1.tools.XHR(share, 'Android');
         if (shareAV !== undefined && shareAV.body.code === 0)
@@ -193,8 +191,8 @@ class MainSite extends plugin_1.default {
             jar: user.jar,
             json: true,
             headers: {
-                "Referer": `https://account.bilibili.com/account/home`,
-                "Host": `account.bilibili.com`
+                'Referer': `https://account.bilibili.com/account/home`,
+                'Host': `account.bilibili.com`
             }
         };
         const mainUserInfo = await plugin_1.tools.XHR(userInfo);
@@ -213,9 +211,9 @@ class MainSite extends plugin_1.default {
                 jar: user.jar,
                 json: true,
                 headers: {
-                    "Referer": `https://www.bilibili.com/av${aid}`,
-                    "Origin": "https://www.bilibili.com",
-                    "Host": `api.bilibili.com`
+                    'Referer': `https://www.bilibili.com/av${aid}`,
+                    'Origin': 'https://www.bilibili.com',
+                    'Host': `api.bilibili.com`
                 }
             };
             const coinAdd = await plugin_1.tools.XHR(addCoin);

@@ -6,8 +6,8 @@ class MainSite extends Plugin {
   }
   public name = '主站功能'
   public description = '每天自动做主站功能（观看、分享、投币）'
-  public version = '0.0.5'
-  public author = 'Vector000'
+  public version = '0.0.6'
+  public author = 'Vector000, lzghzr'
   public async load({ defaultOptions, whiteList }: { defaultOptions: options, whiteList: Set<string> }) {
     // 自动签到
     defaultOptions.newUserData['main'] = false
@@ -42,10 +42,12 @@ class MainSite extends Plugin {
   /**
    * 获取关注列表
    *
+   * @private
    * @param {User} user
-   * @returns {number[]}
+   * @returns {(Promise<number[] | void>)}
+   * @memberof MainSite
    */
-  private async _getAttentionList(user: User) {
+  private async _getAttentionList(user: User): Promise<number[] | void> {
     let mids: number[] = []
     const attentions: XHRoptions = {
       uri: `https://api.bilibili.com/x/relation/followings?vmid=${user.biliUID}&ps=50&order=desc`,
@@ -63,21 +65,23 @@ class MainSite extends Plugin {
   /**
    * 获取视频列表
    *
+   * @private
    * @param {number[]} mids
-   * @returns {number[]}
+   * @returns {Promise<number[]>}
+   * @memberof MainSite
    */
-  private async _getVideoList(mids: number[]) {
+  private async _getVideoList(mids: number[]): Promise<number[]> {
     let aids: number[] = []
     for (let mid of mids) {
       const summitVideo: XHRoptions = {
-        uri: `https://space.bilibili.com/ajax/member/getSubmitVideos?mid=${mid}&pagesize=50&tid=0`,
+        uri: `https://api.bilibili.com/x/space/arc/search?mid=${mid}&ps=100&tid=0&pn=1&keyword=&order=pubdate`,
         json: true
       }
       const getSummitVideo = await tools.XHR<getSummitVideo>(summitVideo)
       if (getSummitVideo === undefined || getSummitVideo.response.statusCode !== 200) continue
       else if (getSummitVideo.body.data === undefined || getSummitVideo.body.data === null) continue
-      else if (getSummitVideo.body.data.vlist.length === 0) continue
-      else getSummitVideo.body.data.vlist.forEach(item => { aids.push(item.aid) })
+      else if (getSummitVideo.body.data.list.vlist.length === 0) continue
+      else getSummitVideo.body.data.list.vlist.forEach(item => { aids.push(item.aid) })
       await tools.Sleep(3 * 1000)
     }
     return aids
@@ -86,18 +90,16 @@ class MainSite extends Plugin {
    * 获取cid(视频av号各p对应唯一值)
    *
    * @param {number} aid
-   * @returns {number}
+   * @returns {(Promise<number | void>)}
    */
-  private async _getCid(aid: number) {
+  private async _getCid(aid: number): Promise<number | void> {
     const cid: XHRoptions = {
       uri: `https://www.bilibili.com/widget/getPageList?aid=${aid}`,
       json: true
     }
-    const getCid = await tools.XHR<any>(cid)
-    if (getCid === undefined) return
-    let cids = <getCid>({ data: [] })
-    cids.data = <cid[]>getCid.body
-    return cids.data[0].cid
+    const getCid = await tools.XHR<getCid[]>(cid)
+    if (getCid === undefined || getCid.response.statusCode !== 200) return
+    return getCid.body[0].cid
   }
   /**
    * 主站功能
@@ -252,19 +254,49 @@ interface attentionsDataList {
  * @interface getSummitVideo
  */
 interface getSummitVideo {
-  status: boolean
+  code: number
+  message: string
+  ttl: number
   data: getSummitVideoData
 }
 interface getSummitVideoData {
-  count: number
-  pages: number
-  vlist: getSummitVideoDataList[]
+  list: getSummitVideoDataList
+  page: getSummitVideoDataPage
 }
 interface getSummitVideoDataList {
-  aid: number
-  created: number
-  mid: number
+  tlist: { [key: string]: getSummitVideoDataListTlist }
+  vlist: getSummitVideoDataListgetSummitVideo[]
+}
+interface getSummitVideoDataListTlist {
+  tid: number
+  count: number
+  name: string
+}
+interface getSummitVideoDataListgetSummitVideo {
+  comment: number
+  typeid: number
+  play: number
+  pic: string
+  subtitle: string
+  description: string
+  copyright: string
   title: string
+  review: number
+  author: string
+  mid: number
+  created: number
+  length: string
+  video_review: number
+  aid: number
+  bvid: string
+  hide_click: boolean
+  is_pay: number
+  is_union_video: number
+}
+interface getSummitVideoDataPage {
+  count: number
+  pn: number
+  ps: number
 }
 /**
  * 主站cid
@@ -272,9 +304,8 @@ interface getSummitVideoDataList {
  * @interface getCid
  */
 interface getCid {
-  data: cid[]
-}
-interface cid {
+  page: number
+  pagename: string
   cid: number
 }
 /**
