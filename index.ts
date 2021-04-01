@@ -5,9 +5,9 @@ class MainSite extends Plugin {
     super()
   }
   public name = '主站功能'
-  public description = '每天自动做主站功能（观看、分享、投币）'
-  public version = '0.0.6'
-  public author = 'Vector000, lzghzr'
+  public description = '每天自动做主站功能（观看、分享、投币、漫画（签到，分享））'
+  public version = '0.0.7'
+  public author = 'Vector000'
   public async load({ defaultOptions, whiteList }: { defaultOptions: options, whiteList: Set<string> }) {
     // 自动签到
     defaultOptions.newUserData['main'] = false
@@ -15,7 +15,7 @@ class MainSite extends Plugin {
     defaultOptions.newUserData['mainCoinGroup'] = []
     defaultOptions.info['main'] = {
       description: '主站功能',
-      tip: '每天自动完成主站功能（观看、分享、投币[可选]）',
+      tip: '每天自动完成主站功能（观看、分享、漫画（签到，分享）、投币[可选]）',
       type: 'boolean'
     }
     defaultOptions.info['mainCoin'] = {
@@ -25,7 +25,7 @@ class MainSite extends Plugin {
     }
     defaultOptions.info['mainCoinGroup'] = {
       description: '主站up主',
-      tip: '指定UP主的UID为任务、投币对象，以\',\'间隔；若留空，则任务、投币对象为随机选择该用户的关注up主（不勾选主站投币功能时此项无效）',
+      tip: '指定UP主的UID为任务、投币对象，以\",\"间隔；若留空，则任务、投币对象为随机选择该用户的关注up主（不勾选主站投币功能时此项无效）',
       type: 'numberArray'
     }
     whiteList.add('main')
@@ -42,18 +42,16 @@ class MainSite extends Plugin {
   /**
    * 获取关注列表
    *
-   * @private
    * @param {User} user
-   * @returns {(Promise<number[] | void>)}
-   * @memberof MainSite
+   * @returns {number[]}
    */
-  private async _getAttentionList(user: User): Promise<number[] | void> {
+  private async _getAttentionList(user: User) {
     let mids: number[] = []
     const attentions: XHRoptions = {
-      uri: `https://api.bilibili.com/x/relation/followings?vmid=${user.biliUID}&ps=50&order=desc`,
-      jar: user.jar,
-      json: true,
-      headers: { 'Host': 'api.bilibili.com' }
+      url: `https://api.bilibili.com/x/relation/followings?vmid=${user.biliUID}&ps=50&order=desc`,
+      cookieJar: user.jar,
+      responseType: 'json',
+      headers: { "Host": "api.bilibili.com" }
     }
     const getAttentions = await tools.XHR<attentions>(attentions)
     if (getAttentions === undefined) return
@@ -65,17 +63,15 @@ class MainSite extends Plugin {
   /**
    * 获取视频列表
    *
-   * @private
    * @param {number[]} mids
-   * @returns {Promise<number[]>}
-   * @memberof MainSite
+   * @returns {number[]}
    */
-  private async _getVideoList(mids: number[]): Promise<number[]> {
+  private async _getVideoList(mids: number[]) {
     let aids: number[] = []
     for (let mid of mids) {
       const summitVideo: XHRoptions = {
-        uri: `https://api.bilibili.com/x/space/arc/search?mid=${mid}&ps=100&tid=0&pn=1&keyword=&order=pubdate`,
-        json: true
+        url: `https://api.bilibili.com/x/space/arc/search?mid=${mid}&ps=100&tid=0&pn=1&keyword=&order=pubdate&jsonp=jsonp`,
+        responseType: 'json'
       }
       const getSummitVideo = await tools.XHR<getSummitVideo>(summitVideo)
       if (getSummitVideo === undefined || getSummitVideo.response.statusCode !== 200) continue
@@ -90,16 +86,18 @@ class MainSite extends Plugin {
    * 获取cid(视频av号各p对应唯一值)
    *
    * @param {number} aid
-   * @returns {(Promise<number | void>)}
+   * @returns {number}
    */
-  private async _getCid(aid: number): Promise<number | void> {
+  private async _getCid(aid: number) {
     const cid: XHRoptions = {
-      uri: `https://www.bilibili.com/widget/getPageList?aid=${aid}`,
-      json: true
+      url: `https://api.bilibili.com/x/player/pagelist?aid=${aid}`,
+      responseType: 'json'
     }
-    const getCid = await tools.XHR<getCid[]>(cid)
-    if (getCid === undefined || getCid.response.statusCode !== 200) return
-    return getCid.body[0].cid
+    const getCid = await tools.XHR<any>(cid)
+    if (getCid === undefined) return
+    let cids = <getCid>({ data: [] })
+    cids.data = <cid[]>getCid.body.data
+    return cids.data[0].cid
   }
   /**
    * 主站功能
@@ -110,25 +108,29 @@ class MainSite extends Plugin {
   private _bilibili(users: Map<string, User>) {
     users.forEach(async (user) => {
       if (!user.userData['main']) return
+      const reward: XHRoptions = {
+        url: `https://account.bilibili.com/home/reward`,
+        cookieJar: user.jar,
+        responseType: 'json',
+        headers: {
+          "Referer": `https://account.bilibili.com/account/home`,
+          "Host": `account.bilibili.com`
+        }
+      }
+      const mainReward = await tools.XHR<mainReward>(reward)
+      if (await this._getComicInfo(user)) await this._mainComic(user)
+      if (mainReward === undefined) return
       let mids = await this._getAttentionList(user)
-      if (mids === undefined) return tools.Log(user.nickname, `获取关注列表失败`)
-      if (mids.length === 0) return tools.Log(user.nickname, `关注列表空空的哦，去关注几个up主吧~`)
-      let aids = await this._getVideoList(mids)
+      let aids: number[] = []
+      if (mids === undefined || mids.length === 0) {
+        await (await this._getRankVideo()).forEach(item => aids.push(item.aid))
+      } else {
+        aids = await this._getVideoList(mids)
+      }
       if (aids.length === 0) return tools.Log(user.nickname, `视频列表空空的哦，去关注几个up主吧~`)
       let aid: number = aids[Math.floor(Math.random() * (aids.length))]
       let cid: number = <number>(await this._getCid(aid))
       if (cid === undefined) return tools.Log(user.nickname, `获取cid失败`)
-      const reward: XHRoptions = {
-        uri: `https://account.bilibili.com/home/reward`,
-        jar: user.jar,
-        json: true,
-        headers: {
-          'Referer': `https://account.bilibili.com/account/home`,
-          'Host': `account.bilibili.com`
-        }
-      }
-      const mainReward = await tools.XHR<mainReward>(reward)
-      if (mainReward === undefined) return
       if (mainReward.body.data.watch_av) tools.Log(user.nickname, `今天已经看过视频啦~`)
       else await this._mainSiteWatch(user, aid, cid)
       if (mainReward.body.data.share_av) tools.Log(user.nickname, `今天已经分享过视频啦~`)
@@ -146,18 +148,35 @@ class MainSite extends Plugin {
     let ts = Date.now()
     const heart: XHRoptions = {
       method: 'POST',
-      uri: `https://api.bilibili.com/x/report/web/heartbeat`,
+      url: `https://api.bilibili.com/x/report/web/heartbeat`,
       body: `aid=${aid}&cid=${cid}&mid=${user.biliUID}&csrf=${tools.getCookie(user.jar, 'bili_jct')}&played_time=3&realtime=3&start_ts=${ts}&type=3&dt=2&play_type=1`,
-      jar: user.jar,
-      json: true,
+      cookieJar: user.jar,
+      responseType: 'json',
       headers: {
-        'Host': 'api.bilibili.com',
-        'Referer': `https://www.bilibili.com/video/av${aid}`
+        "Host": "api.bilibili.com",
+        "Referer": `https://www.bilibili.com/video/av${aid}`
       }
     }
     const avHeart = await tools.XHR<avHeart>(heart)
     if (avHeart !== undefined && avHeart.body.code === 0) tools.Log(user.nickname, `已完成主站观看，经验+5`)
     else tools.Log(user.nickname, `主站观看失败`)
+  }
+  private async _getRankVideo() {
+    const ranking: XHRoptions = {
+      method: 'GET',
+      url: `https://api.bilibili.com/x/web-interface/ranking/v2?rid=0&type=all`,
+      responseType: 'json',
+      headers: {
+        "Host": "api.bilibili.com",
+        "Referer": `https://www.bilibili.com/`
+      }
+    }
+    const rankList = await tools.XHR<rank>(ranking)
+    if (rankList !== undefined && rankList.response.statusCode === 200 && rankList.body.code === 0) {
+      return rankList.body.data.list
+    } else {
+      return []
+    }
   }
   /**
    * 主站分享
@@ -169,11 +188,11 @@ class MainSite extends Plugin {
     let ts = Date.now()
     const share: XHRoptions = {
       method: 'POST',
-      uri: `https://app.bilibili.com/x/v2/view/share/add`,
+      url: `https://app.bilibili.com/x/v2/view/share/add`,
       body: AppClient.signQuery(`access_key=${user.accessToken}&aid=${aid}&appkey=${AppClient.appKey}&build=${AppClient.build}&from=7&mobi_app=android&platform=android&ts=${ts}`),
-      jar: user.jar,
-      json: true,
-      headers: { 'Host': 'app.bilibili.com' }
+      cookieJar: user.jar,
+      responseType: 'json',
+      headers: { "Host": "app.bilibili.com" }
     }
     const shareAV = await tools.XHR<shareAV>(share, 'Android')
     if (shareAV !== undefined && shareAV.body.code === 0) tools.Log(user.nickname, `已完成主站分享，经验+5`)
@@ -188,31 +207,31 @@ class MainSite extends Plugin {
   private async _mainSiteCoin(user: User, aids: number[], coins_av: number) {
     if (coins_av === 50) return tools.Log(user.nickname, `已达到投币上限啦~`)
     const userInfo: XHRoptions = {
-      uri: `https://account.bilibili.com/home/userInfo`,
-      jar: user.jar,
-      json: true,
+      url: `https://account.bilibili.com/site/getCoin`,
+      cookieJar: user.jar,
+      responseType: 'json',
       headers: {
-        'Referer': `https://account.bilibili.com/account/home`,
-        'Host': `account.bilibili.com`
+        "Referer": `https://account.bilibili.com/account/home`,
+        "Host": `account.bilibili.com`
       }
     }
     const mainUserInfo = await tools.XHR<mainUserInfo>(userInfo)
     if (mainUserInfo === undefined) return
-    let coins = mainUserInfo.body.data.coins
+    let coins = mainUserInfo.body.data.money
     if (coins === 0) return tools.Log(user.nickname, `已经没有硬币啦~`)
     while (coins > 0 && coins_av < 50 && aids.length > 0) {
       let i = Math.floor(Math.random() * (aids.length))
       let aid = aids[i]
       const addCoin: XHRoptions = {
         method: 'POST',
-        uri: `https://api.bilibili.com/x/web-interface/coin/add`,
-        body: `aid=${aid}&multiply=1&cross_domain=true&csrf=${tools.getCookie(user.jar, 'bili_jct')}`,
-        jar: user.jar,
-        json: true,
+        url: `https://api.bilibili.com/x/web-interface/coin/add`,
+        body: `aid=${aid}&multiply=1&select_like=0&cross_domain=true&csrf=${tools.getCookie(user.jar, 'bili_jct')}`,
+        cookieJar: user.jar,
+        responseType: 'json',
         headers: {
-          'Referer': `https://www.bilibili.com/av${aid}`,
-          'Origin': 'https://www.bilibili.com',
-          'Host': `api.bilibili.com`
+          "Referer": `https://www.bilibili.com/av${aid}`,
+          "Origin": "https://www.bilibili.com",
+          "Host": `api.bilibili.com`
         }
       }
       const coinAdd = await tools.XHR<coinAdd>(addCoin)
@@ -225,6 +244,56 @@ class MainSite extends Plugin {
       await tools.Sleep(3 * 1000)
     }
     tools.Log(user.nickname, `已完成主站投币，经验+${coins_av}`)
+  }
+  /**
+   * 获取漫画签到信息
+   *
+   * @private
+   * @param user
+   * @memberof _getComicInfo
+   */
+  private async _getComicInfo(user: User) {
+    let ts = Date.now()
+    const sign: XHRoptions = {
+      method: 'POST',
+      url: `https://manga.bilibili.com/twirp/activity.v1.Activity/GetClockInInfo`,
+      body: AppClient.signQuery(`access_key=${user.accessToken}&platform=android&ts=${ts}`),
+      cookieJar: user.jar,
+      responseType: 'json'
+    }
+    const comicInfo = await tools.XHR<comicUserInfo>(sign, 'Android')
+    if (comicInfo !== undefined && comicInfo.body.code === 0 && comicInfo.body.data.status === 0) return true
+    return false
+  }
+  /**
+   * 漫画签到分享
+   *
+   * @private
+   * @param user
+   * @memberof _mainComic
+   */
+  private async _mainComic(user: User) {
+    let ts = Date.now()
+    const sign: XHRoptions = {
+      method: 'POST',
+      url: `https://manga.bilibili.com/twirp/activity.v1.Activity/ClockIn`,
+      body: AppClient.signQuery(`access_key=${user.accessToken}&platform=android&ts=${ts}`),
+      cookieJar: user.jar,
+      responseType: 'json'
+    }
+    const signComic = await tools.XHR<comicSgin>(sign, 'Android')
+    const share: XHRoptions = {
+      method: 'POST',
+      url: `https://manga.bilibili.com/twirp/activity.v1.Activity/ShareComic`,
+      body: AppClient.signQuery(`access_key=${user.accessToken}&platform=android&ts=${ts}`),
+      cookieJar: user.jar,
+      responseType: 'json'
+    }
+    const shareComic = await tools.XHR<comicShare>(share, 'Android')
+    if (signComic !== undefined && signComic.body.code === 0) tools.Log(user.nickname, `已完成漫画签到`)
+    else tools.Log(user.nickname, `漫画签到失败`)
+    if (shareComic !== undefined && shareComic.body.code === 0) tools.Log(user.nickname, `已完成漫画签到，经验+${shareComic.body.data.point}`)
+    else tools.Log(user.nickname, `漫画分享失败`)
   }
 }
 /**
@@ -254,49 +323,27 @@ interface attentionsDataList {
  * @interface getSummitVideo
  */
 interface getSummitVideo {
-  code: number
-  message: string
-  ttl: number
+  status: boolean
   data: getSummitVideoData
 }
 interface getSummitVideoData {
+  page: getgetSummitVideoDataPage
   list: getSummitVideoDataList
-  page: getSummitVideoDataPage
 }
-interface getSummitVideoDataList {
-  tlist: { [key: string]: getSummitVideoDataListTlist }
-  vlist: getSummitVideoDataListgetSummitVideo[]
-}
-interface getSummitVideoDataListTlist {
-  tid: number
-  count: number
-  name: string
-}
-interface getSummitVideoDataListgetSummitVideo {
-  comment: number
-  typeid: number
-  play: number
-  pic: string
-  subtitle: string
-  description: string
-  copyright: string
-  title: string
-  review: number
-  author: string
-  mid: number
-  created: number
-  length: string
-  video_review: number
-  aid: number
-  bvid: string
-  hide_click: boolean
-  is_pay: number
-  is_union_video: number
-}
-interface getSummitVideoDataPage {
+interface getgetSummitVideoDataPage {
   count: number
   pn: number
   ps: number
+}
+interface getSummitVideoDataList {
+  vlist: getSummitVideoDataListVlist[]
+}
+
+interface getSummitVideoDataListVlist {
+  aid: number
+  created: number
+  mid: number
+  title: string
 }
 /**
  * 主站cid
@@ -304,8 +351,9 @@ interface getSummitVideoDataPage {
  * @interface getCid
  */
 interface getCid {
-  page: number
-  pagename: string
+  data: cid[]
+}
+interface cid {
   cid: number
 }
 /**
@@ -342,7 +390,7 @@ interface mainUserInfo {
   data: mainUserInfoData
 }
 interface mainUserInfoData {
-  coins: number
+  money: number
 }
 /**
  * 主站任务
@@ -367,4 +415,52 @@ interface mainRewardData {
 interface coinAdd {
   code: number
 }
+/**
+ * 漫画信息
+ *
+ * @interface comicUserInfo
+ */
+interface comicUserInfo {
+  code: number
+  data: comicUserInfoData
+}
+interface comicUserInfoData {
+  status: number
+}
+/**
+ * 漫画签到
+ *
+ * @interface
+ */
+interface comicSgin {
+  code: number
+}
+/**
+ * 漫画分享
+ *
+ * @interface comicShare
+ */
+interface comicShare {
+  code: number
+  data: comicShareData
+}
+interface comicShareData {
+  point: number
+}
+interface rank {
+  code: number
+  msg: string
+  data: rankDate
+}
+interface rankDate {
+  note: string
+  list: rankDateList[]
+}
+
+interface rankDateList {
+  aid: number
+  bvid: string
+  cid: number
+}
+
 export default new MainSite()
