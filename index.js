@@ -23,11 +23,11 @@ const plugin_1 = __importStar(require("../../plugin"));
 class MainSite extends plugin_1.default {
     constructor() {
         super();
-        this.name = '主站功能';
-        this.description = '每天自动做主站功能（观看、分享、投币、漫画（签到，分享））';
-        this.version = '0.0.7';
-        this.author = 'Vector000';
     }
+    name = '主站功能';
+    description = '每天自动做主站功能（观看、分享、投币、漫画（签到，分享））';
+    version = '0.0.7';
+    author = 'Vector000';
     async load({ defaultOptions, whiteList }) {
         defaultOptions.newUserData['main'] = false;
         defaultOptions.newUserData['mainCoin'] = false;
@@ -82,7 +82,7 @@ class MainSite extends plugin_1.default {
         let aids = [];
         for (let mid of mids) {
             const summitVideo = {
-                url: `https://api.bilibili.com/x/space/arc/search?mid=${mid}&ps=100&tid=0&pn=1&keyword=&order=pubdate&jsonp=jsonp`,
+                url: `https://api.bilibili.com/x/space/arc/search?mid=${mid}&ps=30&tid=0&pn=1&keyword=&order=pubdate`,
                 responseType: 'json'
             };
             const getSummitVideo = await plugin_1.tools.XHR(summitVideo);

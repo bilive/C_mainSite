@@ -70,7 +70,7 @@ class MainSite extends Plugin {
     let aids: number[] = []
     for (let mid of mids) {
       const summitVideo: XHRoptions = {
-        url: `https://api.bilibili.com/x/space/arc/search?mid=${mid}&ps=100&tid=0&pn=1&keyword=&order=pubdate&jsonp=jsonp`,
+        url: `https://api.bilibili.com/x/space/arc/search?mid=${mid}&ps=30&tid=0&pn=1&keyword=&order=pubdate`,
         responseType: 'json'
       }
       const getSummitVideo = await tools.XHR<getSummitVideo>(summitVideo)
